@@ -54,6 +54,8 @@
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabBooks">Kitaplar</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCustomers">Müşteriler</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabOrders">Siparişler</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabOcr">OCR</a></li>
+
       </ul>
       <div class="tab-content border border-top-0 bg-white p-3">
         <!-- Books -->
@@ -120,6 +122,67 @@
             <tbody></tbody>
           </table>
         </div>
+
+        <!-- OCR -->
+        <div class="tab-pane fade" id="tabOcr">
+          <form id="ocrForm" class="row g-2" enctype="multipart/form-data">
+            <div class="col-md-8">
+              <label class="form-label">Dosya (PNG/JPG/WEBP/PDF)</label>
+              <input id="ocrFile" type="file" class="form-control"
+                     accept=".png,.jpg,.jpeg,.webp,.pdf" required>
+              <div class="form-text">En iyi sonuç için net görüntü kullanın.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Dil</label>
+              <select id="ocrLang" class="form-select">
+                <option value="tur" selected>Türkçe (tur)</option>
+                <option value="eng">English (eng)</option>
+                <option value="tur+eng">Türkçe+İngilizce (tur+eng)</option>
+              </select>
+            </div>
+            <div class="col-12 d-flex gap-2">
+              <button type="submit" class="btn btn-success" id="btnOcrStart">
+                Metni Çıkar
+              </button>
+              <button type="button" class="btn btn-secondary" id="btnOcrClear">
+                Temizle
+              </button>
+              <div id="ocrBusy" class="ms-2 d-none">
+                <span class="spinner-border spinner-border-sm"></span>
+                <span class="ms-1">İşleniyor…</span>
+              </div>
+            </div>
+          </form>
+
+          <hr>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="border rounded p-2">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <strong>Önizleme</strong>
+                  <small class="text-muted" id="ocrPreviewInfo"></small>
+                </div>
+                <div id="ocrPreviewBox" class="ratio ratio-4x3 bg-light d-flex
+             align-items-center justify-content-center text-muted">
+                  Dosya seçilmedi
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Çıkarılan Metin</label>
+              <textarea id="ocrText" class="form-control" rows="12" readonly></textarea>
+              <div class="mt-2 d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" id="btnCopyOcr">Kopyala</button>
+                <button class="btn btn-outline-secondary btn-sm" id="btnDownloadTxt">TXT indir</button>
+              </div>
+              <div id="ocrAlert" class="alert alert-danger mt-2 d-none"></div>
+            </div>
+          </div>
+        </div>
+
+
+
+
       </div>
     </div>
   </div>
@@ -131,7 +194,9 @@ const api = {
   login: '/api/auth/login',
   books: '/api/books',
   customers: '/api/customers',
-  orders: '/api/orders'
+  orders: '/api/orders',
+  ocr: '/api/ocr',
+
 };
 let JWT = null;
 
@@ -334,6 +399,125 @@ function refreshAll(){
   refreshCustomers();
   refreshOrders();
 }
+
+
+
+// ===== OCR =====
+function showOcrBusy(on) {
+  $('#ocrBusy').toggleClass('d-none', !on);
+  $('#btnOcrStart').prop('disabled', on);
+}
+
+function showOcrError(msg) {
+  $('#ocrAlert').removeClass('d-none').text(msg);
+  setTimeout(()=> $('#ocrAlert').addClass('d-none'), 3500);
+}
+
+function previewOcrFile(file) {
+  const info = `${file.name} • ${(file.size/1024/1024).toFixed(2)} MB`;
+  $('#ocrPreviewInfo').text(info);
+
+  const box = $('#ocrPreviewBox').empty();
+  const type = (file.type || '').toLowerCase();
+
+  if (type.includes('pdf')) {
+    // PDF için basit placeholder
+    box.addClass('d-flex align-items-center justify-content-center')
+            .text('PDF seçildi (önizleme yok).');
+  } else if (type.startsWith('image/')) {
+    const url = URL.createObjectURL(file);
+    box.removeClass('d-flex align-items-center justify-content-center')
+            .html(`<img src="${url}" class="w-100 h-100 object-fit-contain" alt="preview">`);
+  } else {
+    box.addClass('d-flex align-items-center justify-content-center')
+            .text('Desteklenmeyen format.');
+  }
+}
+
+$('#ocrFile').on('change', function() {
+  const f = this.files && this.files[0];
+  if (!f) return;
+  // Basit boyut sınırı: 15MB
+  if (f.size > 15 * 1024 * 1024) {
+    showOcrError('Dosya 15MB limitini aşıyor.');
+    this.value = '';
+    return;
+  }
+  previewOcrFile(f);
+});
+
+$('#ocrForm').on('submit', function(e){
+  e.preventDefault();
+  if (!JWT) { showOcrError('Önce giriş yapın.'); return; }
+
+  const fileInput = $('#ocrFile')[0];
+  if (!fileInput.files || !fileInput.files[0]) {
+    showOcrError('Lütfen bir dosya seçin.');
+    return;
+  }
+
+  const f = fileInput.files[0];
+  const accept = ['image/png','image/jpeg','image/webp','application/pdf'];
+  if (!accept.includes(f.type)) {
+    showOcrError('Sadece PNG/JPG/WEBP/PDF desteklenir.');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('lang', $('#ocrLang').val() || 'tur');
+
+  showOcrBusy(true);
+  $.ajax({
+    url: api.ocr,
+    method: 'POST',
+    data: fd,
+    processData: false,
+    contentType: false,
+    beforeSend: setAuthHeader,
+    success: function(res){
+      $('#ocrText').val(res && res.text ? res.text : '');
+      if (!res || !res.text) showOcrError('Metin bulunamadı.');
+    },
+    error: function(xhr){
+      const msg = xhr?.responseText || 'OCR sırasında hata oluştu.';
+      showOcrError(msg);
+    },
+    complete: function(){
+      showOcrBusy(false);
+    }
+  });
+});
+
+$('#btnOcrClear').on('click', function(){
+  $('#ocrForm')[0].reset();
+  $('#ocrPreviewBox').attr('class','ratio ratio-4x3 bg-light d-flex align-items-center justify-content-center text-muted')
+          .text('Dosya seçilmedi');
+  $('#ocrPreviewInfo').text('');
+  $('#ocrText').val('');
+});
+
+$('#btnCopyOcr').on('click', function(){
+  const t = $('#ocrText').val();
+  if (!t) return;
+  navigator.clipboard.writeText(t).then(()=> {
+    $(this).text('Kopyalandı').prop('disabled', true);
+    setTimeout(()=> { $('#btnCopyOcr').text('Kopyala').prop('disabled', false); }, 1200);
+  });
+});
+
+$('#btnDownloadTxt').on('click', function(){
+  const t = $('#ocrText').val() || '';
+  const blob = new Blob([t], {type: 'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ocr-output.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+
+
 
 // auto load if already token (none initially)
 </script>
