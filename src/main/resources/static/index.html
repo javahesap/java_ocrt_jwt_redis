@@ -222,8 +222,13 @@ $('#btnLogin').on('click', function() {
       $('.nav-link[href="#tabBooks"]').tab('show');
       refreshAll();
     },
-    error: function(){
-      showAlert('#loginAlert','Giriş başarısız');
+    error: function(xhr){
+      let msg = 'Giriş başarısız';
+      try {
+        const j = xhr.responseJSON;
+        if (j && j.detail) msg = j.detail;
+      } catch(e){}
+      showAlert('#loginAlert', msg);
     }
   });
 });

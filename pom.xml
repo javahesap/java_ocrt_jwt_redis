@@ -80,6 +80,11 @@
       <version>5.8.0</version>
     </dependency>
 
+<!-- Redis (Spring Data Redis - Lettuce) -->
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
 
 
   </dependencies>
