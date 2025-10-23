@@ -39,12 +39,18 @@ public class SecurityConfig {
     }
 
     @Bean
+
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable());
         http.sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         http.authorizeHttpRequests(reg -> reg
-                .requestMatchers("/", "/index.html", "/js/**", "/css/**", "/api/auth/login").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/**").authenticated()
+                // herkese açık sayfalar
+                .requestMatchers("/", "/index.html", "/js/**", "/css/**").permitAll()
+                // login açık
+                .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                // >>> ÖZEL İZİN: resim endpoint'i önce gelsin
+                .requestMatchers(HttpMethod.GET, "/api/snaps/*/image").permitAll()
+                // geri kalan tüm api korumalı
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
         );
@@ -53,6 +59,7 @@ public class SecurityConfig {
         http.authenticationProvider(authProvider());
         return http.build();
     }
+
 
     @Bean
     public CorsFilter corsFilter() {

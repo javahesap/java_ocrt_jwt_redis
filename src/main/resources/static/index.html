@@ -7,6 +7,13 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 </head>
+<style>
+  #captureArea { overflow: hidden; }
+  #selectionRect { pointer-events: none; }
+  /* canvas’ın CSS boyutları element boyutuna eşlensin */
+  #snapCanvas { image-rendering: crisp-edges; }
+</style>
+
 <body class="bg-light">
 <nav class="navbar navbar-expand-lg bg-dark navbar-dark">
   <div class="container-fluid">
@@ -55,6 +62,8 @@
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabCustomers">Müşteriler</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabOrders">Siparişler</a></li>
         <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabOcr">OCR</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabSnap">ScreenSnap</a></li>
+
 
       </ul>
       <div class="tab-content border border-top-0 bg-white p-3">
@@ -183,6 +192,87 @@
 
 
 
+
+
+
+<!-- ScreenSnap -->
+<div class="tab-pane fade" id="tabSnap">
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span>Ekran Yakalama</span>
+          <div>
+            <button id="btnStartCapture" class="btn btn-sm btn-primary me-1">Ekranı Seç</button>
+            <button id="btnFreeze" class="btn btn-sm btn-outline-secondary me-1" disabled>Kare Dondur</button>
+            <button id="btnClearCapture" class="btn btn-sm btn-outline-danger" disabled>Temizle</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="ratio ratio-16x9 border bg-light position-relative" id="captureArea">
+            <video id="screenVideo" class="w-100 h-100" autoplay muted playsinline></video>
+            <canvas id="snapCanvas" class="position-absolute top-0 start-0 w-100 h-100 d-none"></canvas>
+
+            <!-- Seçim overlay (canvas üstünde şeffaf layer) -->
+            <div id="selectOverlay" class="position-absolute top-0 start-0 w-100 h-100"
+                 style="cursor: crosshair; display:none;"></div>
+            <div id="selectionRect" class="position-absolute border border-2 border-primary"
+                 style="display:none; background: rgba(13,110,253,0.15);"></div>
+          </div>
+          <div class="mt-2 small text-muted">
+            1) “Ekranı Seç” ile ekran paylaşımını aç. 2) “Kare Dondur” ile durdur.
+            3) Dondurulan görüntü üzerinde fareyle seçim yap. 4) “Kırp & Kaydet”.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header">Bilgiler</div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label">Ana Başlık</label>
+            <input id="snapTitle" class="form-control" placeholder="Örn: Hata Ekranı">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Alt Başlık</label>
+            <input id="snapSubtitle" class="form-control" placeholder="Örn: 500 hatası detay">
+          </div>
+          <div class="d-flex gap-2">
+            <button id="btnCropSave" class="btn btn-success" disabled>Kırp & Kaydet</button>
+            <button id="btnDownloadLocal" class="btn btn-outline-secondary" disabled>PNG indir</button>
+          </div>
+          <div id="snapAlert" class="alert alert-danger mt-2 d-none"></div>
+        </div>
+      </div>
+
+      <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Kayıtlı Görseller</span>
+          <button id="btnRefreshSnaps" class="btn btn-sm btn-outline-primary">Yenile</button>
+        </div>
+        <div class="card-body">
+          <div id="snapsList" class="row g-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       </div>
     </div>
   </div>
@@ -196,6 +286,8 @@ const api = {
   customers: '/api/customers',
   orders: '/api/orders',
   ocr: '/api/ocr',
+  snaps: '/api/snaps'
+
 
 };
 let JWT = null;
@@ -520,6 +612,263 @@ $('#btnDownloadTxt').on('click', function(){
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ===== ScreenSnap =====
+const video = document.getElementById('screenVideo');
+const canvas = document.getElementById('snapCanvas');
+const overlay = document.getElementById('selectOverlay');
+const rect = document.getElementById('selectionRect');
+
+let mediaStream = null;
+let frozen = false;
+let selection = null; // {x,y,w,h} canvas koordinatlarında
+
+function showSnapError(msg) {
+  $('#snapAlert').removeClass('d-none').text(msg);
+  setTimeout(()=>$('#snapAlert').addClass('d-none'), 3500);
+}
+
+function setButtons() {
+  $('#btnFreeze').prop('disabled', !mediaStream || frozen);
+  $('#btnClearCapture').prop('disabled', !mediaStream && !frozen);
+  $('#btnCropSave').prop('disabled', !selection || !frozen);
+  $('#btnDownloadLocal').prop('disabled', !frozen);
+}
+
+$('#btnStartCapture').on('click', async function(){
+  try {
+    // HTTPS gerekli; localhost’ta çalışır.
+    mediaStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: "monitor", cursor: "always" },
+      audio: false
+    });
+    video.srcObject = mediaStream;
+    video.classList.remove('d-none');
+    canvas.classList.add('d-none');
+    overlay.style.display = 'none';
+    rect.style.display = 'none';
+    frozen = false;
+    selection = null;
+    setButtons();
+  } catch (e) {
+    showSnapError('Ekran paylaşımı reddedildi: ' + e.message);
+  }
+});
+
+$('#btnFreeze').on('click', function(){
+  if (!mediaStream) return;
+  // video frame'i canvas'a çiz
+  const area = document.getElementById('captureArea');
+  const vw = video.videoWidth || area.clientWidth;
+  const vh = video.videoHeight || area.clientHeight;
+  // canvas element boyutunu gerçek piksele ayarla
+  canvas.width = vw;
+  canvas.height = vh;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, vw, vh);
+
+  // yayını durdur
+  mediaStream.getTracks().forEach(t => t.stop());
+  mediaStream = null;
+  frozen = true;
+
+  // video gizle, canvas göster
+  video.classList.add('d-none');
+  canvas.classList.remove('d-none');
+
+  // seçim overlay'i aç
+  overlay.style.display = 'block';
+  rect.style.display = 'none';
+  selection = null;
+  setButtons();
+});
+
+$('#btnClearCapture').on('click', function(){
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+  frozen = false;
+  selection = null;
+  video.classList.remove('d-none');
+  canvas.classList.add('d-none');
+  overlay.style.display = 'none';
+  rect.style.display = 'none';
+  setButtons();
+});
+
+// Seçim işaretleme
+let startX=0, startY=0, isDragging=false;
+overlay.addEventListener('mousedown', (e) => {
+  if (!frozen) return;
+  isDragging = true;
+  const bounds = overlay.getBoundingClientRect();
+  startX = e.clientX - bounds.left;
+  startY = e.clientY - bounds.top;
+  rect.style.left = startX + 'px';
+  rect.style.top = startY + 'px';
+  rect.style.width = '0px';
+  rect.style.height = '0px';
+  rect.style.display = 'block';
+});
+overlay.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const bounds = overlay.getBoundingClientRect();
+  const x = e.clientX - bounds.left;
+  const y = e.clientY - bounds.top;
+  const w = Math.max(1, x - startX);
+  const h = Math.max(1, y - startY);
+  rect.style.left = Math.min(startX, x) + 'px';
+  rect.style.top = Math.min(startY, y) + 'px';
+  rect.style.width = Math.abs(w) + 'px';
+  rect.style.height = Math.abs(h) + 'px';
+});
+overlay.addEventListener('mouseup', (e) => {
+  if (!isDragging) return;
+  isDragging = false;
+
+  const bounds = overlay.getBoundingClientRect();
+  const left = parseFloat(rect.style.left);
+  const top = parseFloat(rect.style.top);
+  const width = parseFloat(rect.style.width);
+  const height = parseFloat(rect.style.height);
+
+  // Overlay (CSS pikseli) -> Canvas (gerçek piksel) ölçekte dönüştür
+  const scaleX = canvas.width / bounds.width;
+  const scaleY = canvas.height / bounds.height;
+
+  selection = {
+    x: Math.round(left * scaleX),
+    y: Math.round(top * scaleY),
+    w: Math.round(width * scaleX),
+    h: Math.round(height * scaleY)
+  };
+  setButtons();
+});
+
+// PNG indir (lokale)
+$('#btnDownloadLocal').on('click', function(){
+  if (!frozen) return;
+  let outCanvas = document.createElement('canvas');
+  const ctx = outCanvas.getContext('2d');
+  if (selection && selection.w > 1 && selection.h > 1) {
+    outCanvas.width = selection.w;
+    outCanvas.height = selection.h;
+    ctx.drawImage(canvas,
+      selection.x, selection.y, selection.w, selection.h,
+      0, 0, selection.w, selection.h
+    );
+  } else {
+    outCanvas.width = canvas.width;
+    outCanvas.height = canvas.height;
+    ctx.drawImage(canvas, 0, 0);
+  }
+  outCanvas.toBlob((blob)=>{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'snap.png';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+});
+
+// Sunucuya gönder ve kaydet
+$('#btnCropSave').on('click', function(){
+  if (!JWT) { showSnapError('Önce giriş yapın.'); return; }
+  if (!frozen) { showSnapError('Önce kare dondurun.'); return; }
+  const title = $('#snapTitle').val()?.trim();
+  if (!title) { showSnapError('Başlık zorunlu.'); return; }
+  const subtitle = $('#snapSubtitle').val()?.trim() || '';
+
+  let outCanvas = document.createElement('canvas');
+  const ctx = outCanvas.getContext('2d');
+  if (selection && selection.w > 1 && selection.h > 1) {
+    outCanvas.width = selection.w;
+    outCanvas.height = selection.h;
+    ctx.drawImage(canvas,
+      selection.x, selection.y, selection.w, selection.h,
+      0, 0, selection.w, selection.h
+    );
+  } else {
+    outCanvas.width = canvas.width;
+    outCanvas.height = canvas.height;
+    ctx.drawImage(canvas, 0, 0);
+  }
+
+  outCanvas.toBlob(function(blob){
+    if (!blob) { showSnapError('PNG oluşturulamadı.'); return; }
+    const fd = new FormData();
+    fd.append('image', blob, 'snap.png');
+    fd.append('title', title);
+    fd.append('subtitle', subtitle);
+
+    $.ajax({
+      url: api.snaps,
+      method: 'POST',
+      data: fd,
+      processData: false,
+      contentType: false,
+      beforeSend: setAuthHeader,
+      success: function(){
+        $('#snapTitle').val('');
+        $('#snapSubtitle').val('');
+        selection = null;
+        rect.style.display = 'none';
+        loadSnaps();
+      },
+      error: function(xhr){
+        const msg = xhr?.responseJSON?.error || xhr?.responseText || 'Kaydetme hatası';
+        showSnapError(msg);
+      }
+    });
+  }, 'image/png');
+});
+
+function loadSnaps(){
+  $.ajax({
+    url: api.snaps, method: 'GET', beforeSend: setAuthHeader,
+    success: function(rows){
+      const list = $('#snapsList').empty();
+      rows.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+      rows.forEach(r => {
+        const col = $('<div class="col-6"></div>');
+        const card = $('<div class="border rounded p-2 h-100"></div>');
+        const img = $('<img class="img-fluid rounded mb-1" alt="snap">')
+          .attr('src', `/api/snaps/${r.id}/image`);
+        const cap = $('<div class="small"></div>').html(
+          `<strong>${r.title || ''}</strong><br><span class="text-muted">${r.subtitle || ''}</span>`
+        );
+        card.append(img).append(cap);
+        col.append(card);
+        list.append(col);
+      });
+    }
+  });
+}
+$('#btnRefreshSnaps').on('click', loadSnaps);
+
+// Bu tab açıldığında kayıtları yükle
+$('a[href="#tabSnap"]').on('shown.bs.tab', loadSnaps);
+
+// Başlangıç düğme halleri
+setButtons();
+
+
+
+
+
 
 
 
