@@ -1,4 +1,5 @@
 package com.sendika.bookstore.web;
+
 import com.sendika.bookstore.model.Snap;
 import com.sendika.bookstore.repo.SnapRepository;
 import com.sendika.bookstore.service.SnapStorageService;
@@ -6,8 +7,10 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
+import jakarta.annotation.security.PermitAll; // <-- ekle
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +27,7 @@ public class SnapController {
         this.storage = storage;
     }
 
-    // PNG + başlık/alt başlık kaydet
+    // PNG + başlık/alt başlık kaydet (korumalı)
     @PreAuthorize("isAuthenticated()")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> upload(
@@ -44,17 +47,17 @@ public class SnapController {
         return ResponseEntity.ok(Map.of("id", snap.getId(), "filename", snap.getFilename()));
     }
 
-    // Liste
+    // Liste (korumalı)
     @PreAuthorize("isAuthenticated()")
     @GetMapping
     public List<Snap> list() {
         return repo.findAll();
     }
 
-    // Görseli döndür (Content-Type: image/png)
-    @PreAuthorize("isAuthenticated()")
+    // Görsel (HERKESE AÇIK) — parametre adını açıkça belirt
+    @PermitAll
     @GetMapping("/{id}/image")
-    public ResponseEntity<Resource> image(@PathVariable Long id) throws Exception {
+    public ResponseEntity<Resource> image(@PathVariable("id") Long id) throws Exception {
         Snap s = repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Not found"));
         var path = storage.resolve(s.getFilename());
         if (!Files.exists(path)) return ResponseEntity.notFound().build();
