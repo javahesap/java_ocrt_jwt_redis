@@ -1,5 +1,6 @@
 package com.sendika.bookstore.service;
 
+import com.sendika.bookstore.aspect.LogExecution;
 import com.sendika.bookstore.model.Authority;
 import com.sendika.bookstore.model.User;
 import com.sendika.bookstore.repo.AuthorityRepository;
@@ -24,6 +25,7 @@ public class DbUserDetailsService implements UserDetailsService {
     }
 
     @Override
+    @LogExecution("loadUserByUsername")
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User u = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
