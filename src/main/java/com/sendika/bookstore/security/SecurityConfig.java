@@ -44,6 +44,7 @@ public class SecurityConfig {
         http.sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         http.authorizeHttpRequests(reg -> reg
                 .requestMatchers("/", "/index.html", "/js/**", "/css/**", "/api/auth/login").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/thread-demo").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/**").authenticated()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()

@@ -35,10 +35,10 @@ public class ThreadDemoService {
         List<String> executorMessages = runExecutorServiceExample();
         List<String> completableMessages = runCompletableFutureExample();
 
-        String explanation = "Bu örnek üç farklı thread yaklaşımını gösterir:"
-            + "\n1. Thread sınıfı ile manuel oluşturma"
-            + "\n2. ExecutorService ile görev havuzu yönetimi"
-            + "\n3. CompletableFuture ile asenkron iş akışı";
+        String explanation = "Bu örnek, aynı işi farklı yollarla nasıl paralel çalıştırabileceğimizi sade bir dille anlatır."
+            + "\n1. Thread sınıfı ile kendi işçimizi oluşturup başlatıyoruz."
+            + "\n2. ExecutorService ile hazır bir havuza işleri bırakıyoruz."
+            + "\n3. CompletableFuture ile işleri zincirleyip sonucu bekliyoruz.";
 
         return new ThreadDemoResult(basicThreadMessages, executorMessages, completableMessages, explanation);
     }
@@ -50,6 +50,8 @@ public class ThreadDemoService {
         List<String> messages = new ArrayList<>();
         List<Thread> threads = new ArrayList<>();
 
+        messages.add("Önce üç tane Thread oluşturuyoruz, hepsi kısa bir işi yapıyor.");
+
         for (int i = 1; i <= 3; i++) {
             int workerId = i;
             Thread thread = new Thread(() -> {
@@ -57,7 +59,7 @@ public class ThreadDemoService {
                 simulateWorkload();
                 Duration duration = Duration.between(start, Instant.now());
                 synchronized (messages) {
-                    messages.add("Thread " + workerId + " tamamlandı (" + duration.toMillis() + " ms)");
+                    messages.add("Thread " + workerId + " işini bitirdi. (" + duration.toMillis() + " ms sürdü)");
                 }
             }, "basic-thread-" + workerId);
             thread.start();
@@ -69,7 +71,7 @@ public class ThreadDemoService {
                 thread.join();
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
-                messages.add(thread.getName() + " beklenirken interrupt alındı");
+                messages.add(thread.getName() + " beklerken kesildi.");
             }
         }
 
@@ -83,13 +85,15 @@ public class ThreadDemoService {
         List<String> messages = new ArrayList<>();
         List<Future<String>> futures = new ArrayList<>();
 
+        messages.add("Şimdi aynı işleri ExecutorService havuzuna veriyoruz.");
+
         for (int i = 1; i <= 3; i++) {
             int workerId = i;
             futures.add(executorService.submit(() -> {
                 Instant start = Instant.now();
                 simulateWorkload();
                 Duration duration = Duration.between(start, Instant.now());
-                return "Executor görevi " + workerId + " tamamlandı (" + duration.toMillis() + " ms)";
+                return "Havuzdaki görev " + workerId + " bitti. (" + duration.toMillis() + " ms sürdü)";
             }));
         }
 
@@ -98,9 +102,9 @@ public class ThreadDemoService {
                 messages.add(future.get());
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
-                messages.add("Executor görevi beklenirken interrupt alındı");
+                messages.add("Havuzdaki görev beklenirken kesinti oldu.");
             } catch (ExecutionException ex) {
-                messages.add("Executor görevi hata verdi: " + ex.getCause());
+                messages.add("Havuzdaki görev hata verdi: " + ex.getCause());
             }
         }
 
@@ -113,13 +117,15 @@ public class ThreadDemoService {
     private List<String> runCompletableFutureExample() {
         List<String> messages = new ArrayList<>();
 
+        messages.add("Son olarak CompletableFuture ile işleri zincirliyoruz.");
+
         List<CompletableFuture<String>> futures = new ArrayList<>();
         for (int i = 1; i <= 3; i++) {
             int workerId = i;
             futures.add(CompletableFuture.supplyAsync(() -> {
                 simulateWorkload();
                 return workerId;
-            }, executorService).thenApply(result -> "CompletableFuture görevi " + result + " tamamlandı"));
+            }, executorService).thenApply(result -> "CompletableFuture görevi " + result + " bitti."));
         }
 
         CompletableFuture<Void> allDone = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
@@ -127,7 +133,7 @@ public class ThreadDemoService {
             allDone.join();
             futures.forEach(future -> messages.add(future.join()));
         } catch (Exception ex) {
-            messages.add("CompletableFuture zincirinde hata: " + ex.getMessage());
+            messages.add("CompletableFuture zincirinde sorun oldu: " + ex.getMessage());
         }
 
         return messages;
