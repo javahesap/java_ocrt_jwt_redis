@@ -35,9 +35,9 @@ public class ThreadDemoService {
         List<String> executorMessages = runExecutorServiceExample();
         List<String> completableMessages = runCompletableFutureExample();
 
-        String explanation = "Bu örnek, aynı işi farklı yollarla nasıl paralel çalıştırabileceğimizi sade bir dille anlatır." 
-            + "\n1. Thread sınıfı ile kendi işçimizi oluşturup başlatıyoruz." 
-            + "\n2. ExecutorService ile hazır bir havuza işleri bırakıyoruz." 
+        String explanation = "Bu örnek, aynı işi farklı yollarla nasıl paralel çalıştırabileceğimizi sade bir dille anlatır."
+            + "\n1. Thread sınıfı ile kendi işçimizi oluşturup başlatıyoruz."
+            + "\n2. ExecutorService ile hazır bir havuza işleri bırakıyoruz."
             + "\n3. CompletableFuture ile işleri zincirleyip sonucu bekliyoruz.";
 
         return new ThreadDemoResult(basicThreadMessages, executorMessages, completableMessages, explanation);
